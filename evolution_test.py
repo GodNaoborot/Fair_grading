@@ -103,14 +103,23 @@ def generate_rating_matrix(n_students, m_items, seed=42):
 
     return rating_matrix, perf, diff
 
-marks, perf, diff = generate_rating_matrix(3,3)
-print(type(perf),perf,type(diff),diff)
-print(marks)
-print(np.concat((perf,diff)))
+if __name__ == '__main__':
+    marks, perf, diff = generate_rating_matrix(3,3)
+    print(type(perf),perf,type(diff),diff)
+    print(marks)
+    print(np.concat((perf,diff)))
 
-res = try_find_opt(marks)
-print(res)
+    res = try_find_opt(marks)
+    print(res)
 
-print(np.concat((perf,diff)))
-print(np.abs(np.array(res) - np.concat((perf,diff))))
-print(marks)
+    print(np.concat((perf,diff)))
+    print(np.abs(np.array(res) - np.concat((perf,diff))))
+    print(marks)
+
+    shapes = [(5, 5), (10, 10), (20, 20)]
+    for shape in shapes:
+        marks, perf, diff = generate_rating_matrix(*shape)
+        res = try_find_opt(marks)
+        print(np.abs(np.array(res) - np.concatenate((perf, diff))))
+        print(max(np.abs(np.array(res) - np.concatenate((perf, diff)))))
+        print()

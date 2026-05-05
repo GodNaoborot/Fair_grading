@@ -4,34 +4,23 @@ from scipy.stats import beta
 import scipy.stats as st
 from deap import base, creator, tools, algorithms
 
-
-# ----------------------------------------------------------------------
-# 1. Your existing functions (f_2, f_3, f_4, f_5, generate_data,
-#    calculate_prob, generate_rating_matrix) – keep them exactly as you wrote.
-# ----------------------------------------------------------------------
-
 def f_2(x):
     return (1 - x) ** 4
-
 
 def f_3(x):
     term1 = 1 / (x * np.sqrt(3 * np.pi))
     exponent = -0.5 * ((np.log(x) + np.sqrt(1.5) - np.log(3)) ** 2)
     return term1 * np.exp(exponent)
 
-
 def f_4(x):
     return f_3(1 - x)
-
 
 def f_5(x):
     return f_2(1 - x)
 
-
 def generate_data(students_size, items_size, random_state=42):
     np.random.seed(random_state)
     return np.random.randint(low=2, high=6, size=students_size * items_size).reshape(students_size, items_size)
-
 
 def calculate_prob(ratings_matrix, st_it, student_alpha=2, student_beta=2,
                    item_alpha=2, item_beta=2):
@@ -57,7 +46,6 @@ def calculate_prob(ratings_matrix, st_it, student_alpha=2, student_beta=2,
 
     return (np.prod(beta.pdf(students, student_alpha, student_beta)) *
             np.prod(beta.pdf(items, item_alpha, item_beta)) * total_product)
-
 
 def generate_rating_matrix(n_students, m_items, seed=42):
     np.random.seed(seed)
@@ -132,7 +120,7 @@ def deap_optimize(ratings_matrix, student_alpha=2, student_beta=2,
     """
     # Dimensions
     n_students, n_items = ratings_matrix.shape
-    dim = n_students + n_items  # total number of parameters
+    dim = n_students + n_items
 
     # Fixed parameters for the fitness function
     fit_kwargs = {
@@ -159,7 +147,6 @@ def deap_optimize(ratings_matrix, student_alpha=2, student_beta=2,
     toolbox.register("individual", tools.initIterate, creator.Individual, init_individual)
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
-    # Fitness evaluation (maximisation)
     def evaluate(individual):
         return calculate_prob(ratings_matrix, np.array(individual), **fit_kwargs),
 
@@ -245,7 +232,7 @@ def try_find_opt(ratings_matrix, student_alpha=2, student_beta=2,
         cxpb=0.8,
         mutpb=0.2,
         tournament_size=3,
-        verbose=True
+        verbose=False
     )
     return best_ind  # mimic the return of ea_solve (which returned the solution vector)
 
@@ -265,3 +252,10 @@ if __name__ == "__main__":
     print(np.concatenate((perf, diff)))
     print(np.abs(np.array(res) - np.concatenate((perf, diff))))
     print(marks)
+    shapes = [(5, 5), (10, 10), (20, 20)]
+    for shape in shapes:
+        marks, perf, diff = generate_rating_matrix(*shape)
+        res = try_find_opt(marks)
+        print(np.abs(np.array(res) - np.concatenate((perf, diff))))
+        print(max(np.abs(np.array(res) - np.concatenate((perf, diff)))))
+        print()
