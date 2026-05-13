@@ -205,6 +205,9 @@ def deap_optimize(ratings_matrix, student_alpha=2, student_beta=2,
         print(f"Item difficulties: {np.array(best_individual[n_students:])}")
         print(f"Fitness = {best_fitness:.6f}")
 
+    del creator.FitnessMax
+    del creator.Individual
+
     return best_individual, best_fitness
 
 
