@@ -5,12 +5,10 @@ import scipy.stats as st
 from deap import base, creator, tools, algorithms
 
 def f_2(x):
-    return (1 - x) ** 4
+    return ((1 - x) ** 76)/((1 - x) ** 76 + 10 * x ** 12)
 
 def f_3(x):
-    term1 = 1 / (x * np.sqrt(3 * np.pi))
-    exponent = -0.5 * ((np.log(x) + np.sqrt(1.5) - np.log(3)) ** 2)
-    return term1 * np.exp(exponent)
+    return (1-x)*(1-f_2(x)-f_5(x))
 
 def f_4(x):
     return f_3(1 - x)
@@ -256,6 +254,7 @@ if __name__ == "__main__":
     for shape in shapes:
         marks, perf, diff = generate_rating_matrix(*shape)
         res = try_find_opt(marks)
+        print(marks)
         print(np.abs(np.array(res) - np.concatenate((perf, diff))))
         print(max(np.abs(np.array(res) - np.concatenate((perf, diff)))))
         print()
