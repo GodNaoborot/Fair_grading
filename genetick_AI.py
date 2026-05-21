@@ -1,8 +1,32 @@
 import numpy as np
 import random
+
+import pandas
 from scipy.stats import beta
 import scipy.stats as st
 from deap import base, creator, tools, algorithms
+
+
+def chi_2_2_mean(d_ec, d_ez=None, d_hd=None, w_shape=0.6):
+    if d_hd is None:
+        d_hd = [0.15, 0.57, 0.24, 0.14]
+    if d_ez is None:
+        d_ez = [0.03, 0.10, 0.26, 0.61]
+    d_ec = np.asarray(d_ec, dtype=float)
+    d_ez = np.asarray(d_ez, dtype=float)
+    d_hd = np.asarray(d_hd, dtype=float)
+    mean = d_ec.mean()
+    dist_to_easy = np.sum((d_ec - d_ez) ** 2 / d_ez)
+    dist_to_hard = np.sum((d_ec - d_hd) ** 2 / d_hd)
+
+    chi_2 = dist_to_easy / (dist_to_easy + dist_to_hard)
+
+    grades = np.array([2, 3, 4, 5])
+    mean_score = np.dot(d_ec, grades)
+    s_mean = 1.0 - (mean_score - 2.0) / 3.0
+    s_mean = np.clip(s_mean, 0.0, 1.0)
+
+    return w_shape * chi_2 + (1 - w_shape) * s_mean
 
 def f_2(x):
     return ((1 - x) ** 76)/((1 - x) ** 76 + 10 * x ** 12)
@@ -19,6 +43,17 @@ def f_5(x):
 def generate_data(students_size, items_size, random_state=42):
     np.random.seed(random_state)
     return np.random.randint(low=2, high=6, size=students_size * items_size).reshape(students_size, items_size)
+
+def difficulty_of_subjects(ratings_matrix):
+    rm = pandas.DataFrame(ratings_matrix)
+    out = []
+    for column in rm.columns:
+        vc = rm[column].value_counts(normalize=True)
+        d = [vc.get(2, 0), vc.get(3, 0), vc.get(4, 0), vc.get(5, 0)]
+        dif = chi_2_2_mean(d)
+        out.append(dif)
+    return out
+
 
 def calculate_prob(ratings_matrix, st_it, student_alpha=2, student_beta=2,
                    item_alpha=2, item_beta=2):
@@ -139,7 +174,7 @@ def deap_optimize(ratings_matrix, student_alpha=2, student_beta=2,
         # Draw student part from Beta(2,2)
         student_part = np.random.beta(2, 2, n_students).tolist()
         # Draw item part from Beta(2,2)
-        item_part = np.random.beta(2, 2, n_items).tolist()
+        item_part = difficulty_of_subjects(ratings_matrix)
         return student_part + item_part
 
     toolbox.register("individual", tools.initIterate, creator.Individual, init_individual)
