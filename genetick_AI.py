@@ -29,7 +29,7 @@ def chi_2_2_mean(d_ec, d_ez=None, d_hd=None, w_shape=0.6):
     return w_shape * chi_2 + (1 - w_shape) * s_mean
 
 def f_2(x):
-    return ((1 - x) ** 76)/((1 - x) ** 76 + 10 * x ** 12)
+    return ((1 - x) ** 2)/((1 - x) ** 2 + 100 * x ** 3)
 
 def f_3(x):
     return (1-x)*(1-f_2(x)-f_5(x))
@@ -41,7 +41,7 @@ def f_5(x):
     return f_2(1 - x)
 
 def generate_data(students_size, items_size, random_state=42):
-    np.random.seed(random_state)
+    #np.random.seed(random_state)
     return np.random.randint(low=2, high=6, size=students_size * items_size).reshape(students_size, items_size)
 
 def difficulty_of_subjects(ratings_matrix):
@@ -74,14 +74,14 @@ def calculate_prob(ratings_matrix, st_it, student_alpha=2, student_beta=2,
         rows, cols = np.where(mask)
         v1_vals = students[rows]
         v2_vals = items[cols]
-        f_vals = func(v1_vals / (v1_vals + v2_vals))
+        f_vals = func(1-v2_vals*(1-v1_vals))
         total_product *= np.prod(f_vals)
 
     return (np.prod(beta.pdf(students, student_alpha, student_beta)) *
             np.prod(beta.pdf(items, item_alpha, item_beta)) * total_product)
 
 def generate_rating_matrix(n_students, m_items, seed=42):
-    np.random.seed(seed)
+    #np.random.seed(seed)
     perf = st.beta(a=2, b=2).rvs(size=n_students)
     diff = st.beta(a=2, b=2).rvs(size=m_items)
     ratio = np.zeros((n_students, m_items))
@@ -89,7 +89,7 @@ def generate_rating_matrix(n_students, m_items, seed=42):
 
     for i, perf_i in enumerate(perf):
         for j, diff_j in enumerate(diff):
-            ratio[i, j] = perf_i / (perf_i + diff_j)
+            ratio[i, j] = 1-diff_j*(1-perf_i)
             w2 = f_2(ratio[i, j])
             w3 = f_3(ratio[i, j])
             w4 = f_4(ratio[i, j])
@@ -219,8 +219,8 @@ def deap_optimize(ratings_matrix, student_alpha=2, student_beta=2,
     stats.register("avg", np.mean)
 
     # --- Run the GA -------------------------------------------------
-    random.seed(42)
-    np.random.seed(42)
+    #random.seed(42)
+    #np.random.seed(42)
 
     pop = toolbox.population(n=pop_size)
 
