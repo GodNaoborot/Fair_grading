@@ -184,74 +184,140 @@ def plot_posterior_bars():
 
 
 # ---------------------------------------------------------------------------
-# (4) HDI forest-plot для sem1 — по одному на каждый вариант модели
+# (4) HDI forest-plot по предметам — для каждого (sem, model)
 # ---------------------------------------------------------------------------
-def plot_hdi_forests():
-    subjects = pd.read_csv(DATA / "grades_sem1.csv",
+def plot_items_hdi(sem, model):
+    """3 ratio бок о бок: HDI item_difficulty по всем предметам семестра."""
+    subjects = pd.read_csv(DATA / f"grades_sem{sem}.csv",
                            index_col="student_id").columns.tolist()
     n = len(subjects)
 
-    for model in ("cond", "nocond"):
-        traces = load_traces(1, model)
-        if len(traces) < 1:
-            print(f"no traces for sem1/{model}")
-            continue
+    traces = load_traces(sem, model)
+    if len(traces) < 1:
+        print(f"no traces for sem{sem}/{model}")
+        return
 
-        # Order subjects by mean of the first available ratio
-        anchor = "legacy_sd" if "legacy_sd" in traces else next(iter(traces))
-        m_anchor = traces[anchor].posterior["item_difficulty"].mean(
-            ("chain", "draw")).values
-        order = np.argsort(m_anchor)
+    # Сортируем предметы по среднему первого доступного варианта (для якоря)
+    anchor = "legacy_sd" if "legacy_sd" in traces else next(iter(traces))
+    m_anchor = traces[anchor].posterior["item_difficulty"].mean(
+        ("chain", "draw")).values
+    order = np.argsort(m_anchor)
 
-        fig, axes = plt.subplots(1, len(traces),
-                                 figsize=(5 * len(traces) + 1, 0.55 * n + 2),
-                                 sharey=True,
-                                 gridspec_kw={"wspace": 0.05})
-        if len(traces) == 1:
-            axes = [axes]
+    fig, axes = plt.subplots(1, len(traces),
+                             figsize=(5 * len(traces) + 1, 0.55 * n + 2),
+                             sharey=True,
+                             gridspec_kw={"wspace": 0.05})
+    if len(traces) == 1:
+        axes = [axes]
 
-        for ax, kind in zip(axes, [k for k in RATIO_KINDS if k in traces]):
-            t = traces[kind]
-            means = t.posterior["item_difficulty"].mean(("chain", "draw")).values
-            hdi = az.hdi(t, var_names=["item_difficulty"],
-                         hdi_prob=0.94)["item_difficulty"].values
-            color = COLORS[kind]
-            for yi, i in enumerate(order):
-                ax.plot([hdi[i, 0], hdi[i, 1]], [yi, yi],
-                        color=color, lw=2.5, alpha=0.85)
-                ax.plot([hdi[i, 0], hdi[i, 0]], [yi - 0.18, yi + 0.18],
-                        color=color, lw=2)
-                ax.plot([hdi[i, 1], hdi[i, 1]], [yi - 0.18, yi + 0.18],
-                        color=color, lw=2)
-                ax.scatter([means[i]], [yi], color=color, s=72, zorder=3,
-                           edgecolor="black", lw=0.6)
-                ax.text(hdi[i, 1] + 0.01, yi,
-                        f"{means[i]:.2f}",
-                        va="center", fontsize=8.5)
-            ax.set_xlim(0, 1)
-            ax.axvline(0.5, color="grey", ls=":", lw=0.7)
-            ax.set_xlabel("item_difficulty")
-            ax.set_title(LABELS[kind], fontsize=11, weight="bold")
-            ax.grid(True, axis="x", alpha=0.3)
+    for ax, kind in zip(axes, [k for k in RATIO_KINDS if k in traces]):
+        t = traces[kind]
+        means = t.posterior["item_difficulty"].mean(("chain", "draw")).values
+        hdi = az.hdi(t, var_names=["item_difficulty"],
+                     hdi_prob=0.94)["item_difficulty"].values
+        color = COLORS[kind]
+        for yi, i in enumerate(order):
+            ax.plot([hdi[i, 0], hdi[i, 1]], [yi, yi],
+                    color=color, lw=2.5, alpha=0.85)
+            ax.plot([hdi[i, 0], hdi[i, 0]], [yi - 0.18, yi + 0.18], color=color, lw=2)
+            ax.plot([hdi[i, 1], hdi[i, 1]], [yi - 0.18, yi + 0.18], color=color, lw=2)
+            ax.scatter([means[i]], [yi], color=color, s=72, zorder=3,
+                       edgecolor="black", lw=0.6)
+            ax.text(hdi[i, 1] + 0.01, yi,
+                    f"{means[i]:.2f}",
+                    va="center", fontsize=8.5)
+        ax.set_xlim(0, 1)
+        ax.axvline(0.5, color="grey", ls=":", lw=0.7)
+        ax.set_xlabel("item_difficulty")
+        ax.set_title(LABELS[kind], fontsize=11, weight="bold")
+        ax.grid(True, axis="x", alpha=0.3)
 
-        axes[0].set_yticks(np.arange(n))
-        axes[0].set_yticklabels([subjects[i] for i in order], fontsize=10)
+    axes[0].set_yticks(np.arange(n))
+    axes[0].set_yticklabels([subjects[i] for i in order], fontsize=10)
 
-        fig.suptitle(
-            f"Semester 1 · {model} · 94% HDI for item_difficulty under 3 ratios",
-            fontsize=13, weight="bold", y=1.005,
-        )
-        fig.tight_layout()
-        out = PLOTS / f"ratio_hdi_sem1_{model}.png"
-        fig.savefig(out, dpi=130, bbox_inches="tight")
-        plt.close(fig)
-        print(f"saved {out}")
+    fig.suptitle(
+        f"Сем {sem} · {model} · 94% HDI сложности предметов (item_difficulty) для 3 ratio",
+        fontsize=13, weight="bold", y=1.005,
+    )
+    fig.tight_layout()
+    out = PLOTS / f"items_hdi_sem{sem}_{model}.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    print(f"saved {out}")
+
+
+# ---------------------------------------------------------------------------
+# (5) HDI forest-plot по студентам — для каждого (sem, model)
+# ---------------------------------------------------------------------------
+def plot_students_hdi(sem, model):
+    """HDI student_ability для всех студентов: 3 ratio как смещённые маркеры."""
+    df = pd.read_csv(DATA / f"grades_sem{sem}.csv", index_col="student_id")
+    sids = df.index.tolist()
+    n = len(sids)
+
+    traces = load_traces(sem, model)
+    if len(traces) < 1:
+        print(f"no traces for sem{sem}/{model}")
+        return
+
+    # Сортируем студентов по среднему sigmoid (или первого доступного варианта)
+    anchor = "sigmoid" if "sigmoid" in traces else next(iter(traces))
+    m_anchor = traces[anchor].posterior["student_ability"].mean(
+        ("chain", "draw")).values
+    order = np.argsort(m_anchor)
+
+    fig, ax = plt.subplots(figsize=(12, 0.18 * n + 3))
+
+    # Смещения по вертикали, чтобы три HDI-полоски не лежали друг на друге
+    offsets = {"legacy_sd": -0.27, "current": 0.0, "sigmoid": 0.27}
+
+    for kind in [k for k in RATIO_KINDS if k in traces]:
+        t = traces[kind]
+        means = t.posterior["student_ability"].mean(("chain", "draw")).values
+        hdi = az.hdi(t, var_names=["student_ability"],
+                     hdi_prob=0.94)["student_ability"].values
+        color = COLORS[kind]
+        off = offsets[kind]
+        for yi, i in enumerate(order):
+            ax.plot([hdi[i, 0], hdi[i, 1]], [yi + off, yi + off],
+                    color=color, lw=1.4, alpha=0.85)
+            ax.scatter([means[i]], [yi + off], color=color, s=14, zorder=3)
+
+    ax.set_yticks(np.arange(n))
+    ax.set_yticklabels([f"#{sids[i]}" for i in order], fontsize=6)
+    ax.set_xlim(0, 1)
+    ax.axvline(0.5, color="grey", ls=":", lw=0.7)
+    ax.set_xlabel("student_ability")
+    ax.set_title(
+        f"Сем {sem} · {model} · 94% HDI способности студентов для 3 ratio "
+        f"(отсортировано по {anchor})",
+        fontsize=12, weight="bold",
+    )
+    ax.grid(True, axis="x", alpha=0.3)
+
+    from matplotlib.patches import Patch
+    handles = [Patch(color=COLORS[k], label=LABELS[k])
+               for k in RATIO_KINDS if k in traces]
+    ax.legend(handles=handles, loc="upper left", fontsize=10,
+              bbox_to_anchor=(0.0, 1.02), ncol=3)
+
+    fig.tight_layout()
+    out = PLOTS / f"students_hdi_sem{sem}_{model}.png"
+    fig.savefig(out, dpi=110, bbox_inches="tight")
+    plt.close(fig)
+    print(f"saved {out}")
 
 
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    # «Бэкграунд»: формы ratio и кривые E[grade]
     plot_surfaces()
     plot_curves()
+    # Барчарты сложности по предметам — все 4 (sem, model) комбо на одной картинке
     plot_posterior_bars()
-    plot_hdi_forests()
+    # HDI predmетов и студентов: по 1 файлу на каждый (sem, model)
+    for sem in (1, 2):
+        for model in ("cond", "nocond"):
+            plot_items_hdi(sem, model)
+            plot_students_hdi(sem, model)
     print("Done.")

@@ -1,14 +1,16 @@
-# Data (raw grades aren't versioned in this repo)
+# Сырые данные (не версионируются)
 *.xls
 *.xlsx
 *.csv
 data/
 
-# Outputs
-results/
+# Выходные артефакты: трассы и логи игнорируем, графики коммитим
+results/traces/
+results/logs/
 *.nc
-*.png
 *.log
+*.png
+!results/plots/*.png
 
 # Python
 __pycache__/
