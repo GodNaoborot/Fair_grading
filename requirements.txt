@@ -1,0 +1,21 @@
+# Sampling & inference
+pymc>=5.20,<6
+arviz>=0.18
+pytensor>=2.20
+
+# Numerics
+numpy>=2.0
+pandas>=2.0
+scipy>=1.13
+
+# Plotting
+matplotlib>=3.8
+
+# Notebook environment
+jupyter
+ipykernel
+
+# (data scraping / parser_lib)
+beautifulsoup4
+requests
+openpyxl
