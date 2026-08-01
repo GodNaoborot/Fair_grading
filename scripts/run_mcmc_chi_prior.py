@@ -16,6 +16,8 @@ import numpy as np
 import pandas as pd
 import arviz as az
 
+import az_compat
+
 import pymc as pm
 
 from utils import BUILDERS, chi_square_priors, RATIO_KINDS
@@ -47,8 +49,7 @@ def sanitize_attrs(trace):
     а netCDF принимает только строки, числа и массивы — без этого
     `to_netcdf` падает с TypeError.
     """
-    all_attrs = [trace.attrs] + [getattr(trace, g).attrs for g in trace.groups()]
-    for attrs in all_attrs:
+    for attrs in az_compat.attr_dicts(trace):
         for key, value in list(attrs.items()):
             if not isinstance(value, NETCDF_SAFE):
                 attrs[key] = str(value)

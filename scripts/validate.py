@@ -96,7 +96,8 @@ def compare_semester(sem, thin):
             bad_k[name] = n_bad
             idatas[name] = idata
             flag = "" if n_bad == 0 else f"  [Парето-k > {PARETO_K_LIMIT}: {n_bad}]"
-            print(f"  {name:<20} elpd_loo = {loo.elpd_loo:9.1f} ± {loo.se:5.1f}{flag}")
+            print(f"  {name:<20} elpd_loo = {az_compat.elpd(loo):9.1f} "
+                  f"± {float(loo.se):5.1f}{flag}")
 
     if len(idatas) < 2:
         print("  сравнивать нечего")
