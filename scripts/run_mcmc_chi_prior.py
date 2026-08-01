@@ -29,9 +29,8 @@ MODELS = tuple(BUILDERS)
 # в scripts/validate.py и запускаются явным --model.
 DEFAULT_MODELS = ("cond", "nocond")
 
-# log_likelihood не пишем в трассу: это (draws × n_obs) float64, то есть
-# сотни мегабайт на файл. scripts/validate.py досчитывает его на прорежённой
-# выборке, чего для LOO с запасом хватает.
+# log_likelihood в трассу не пишем — это (draws × n_obs) float64, сотни МБ
+# на файл. validate.py досчитывает его на прорежённой выборке.
 
 
 def load(sem):

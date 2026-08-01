@@ -431,6 +431,7 @@ notebooks/
   parser_test.ipynb          разбор исходной таблицы
 report/
   report.typ                   исходник статьи; таблицы читает из results/*.csv
+  fair_grading.pdf             собранная статья
 tests/
   test_model.py                свойства f, ratio, вероятностей и приоров
   test_numpy_matches_pymc.py   эквивалентность numpy-формул и PyMC-моделей

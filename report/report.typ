@@ -1,12 +1,6 @@
-// Статья по проекту Fair grading.
-// Таблицы читаются из results/*.csv на этапе компиляции, поэтому документ
-// не расходится с фактическими результатами после нового прогона.
-//
-//     python scripts/build_report.py
-//
-// ВНИМАНИЕ: автор и аффилиация ниже проставлены по данным git; проверьте
-// перед отправкой куда бы то ни было. Ссылки в библиографии тоже стоит
-// сверить с оригиналами.
+// Сборка: python scripts/build_report.py
+// Таблицы тянутся из results/*.csv при компиляции.
+// TODO: сверить выходные данные в bib с оригиналами
 
 #set page(paper: "a4", margin: (x: 2.2cm, y: 2.2cm), numbering: "1")
 #set text(font: "Times New Roman", lang: "ru", size: 11pt)
@@ -16,8 +10,7 @@
 #show raw: set text(font: "Consolas", size: 9.5pt)
 #set math.equation(numbering: "(1)")
 
-// Ссылка на формулу должна выглядеть как «(7)», а не «Уравнение 7»:
-// последнее не согласуется по падежу в русском тексте.
+// По умолчанию Typst пишет «Уравнение 7» — не согласуется по падежу.
 #show ref: it => {
   let el = it.element
   if el != none and el.func() == math.equation {
@@ -28,7 +21,7 @@
 
 #let data(name) = csv("../results/" + name)
 
-// Таблица из CSV: указываются заголовки и индексы нужных колонок.
+// headers — подписи, cols — индексы колонок в CSV.
 #let sheet(rows, headers, cols, fmt: (v, i) => v) = {
   set text(size: 9.5pt)
   table(
@@ -42,20 +35,18 @@
   )
 }
 
-// Примитивы для двудольного графа
 #let vertex(x, y, label) = place(dx: x - 11pt, dy: y - 11pt,
   box(width: 22pt, height: 22pt, radius: 11pt, stroke: 0.7pt, fill: white,
       align(center + horizon)[#text(9.5pt)[#label]]))
-// at — доля длины ребра, на которой ставится подпись; разные значения
-// разводят подписи пересекающихся рёбер.
+
+// at — где на ребре ставить подпись, чтобы не наезжали друг на друга
 #let arc(x1, y1, x2, y2, tag, at: 0.5) = {
   place(dx: x1, dy: y1, line(end: (x2 - x1, y2 - y1), stroke: 0.5pt))
   place(dx: x1 + (x2 - x1) * at - 6pt, dy: y1 + (y2 - y1) * at - 8pt,
         box(fill: white, inset: 1.5pt)[#text(8.5pt)[#tag]])
 }
 
-// Список литературы: только те методы и инструменты, которые фактически
-// применялись в работе. Порядок задаёт нумерацию.
+// Порядок задаёт нумерацию ссылок
 #let bib = (
   nuts: [Hoffman M. D., Gelman A. The No-U-Turn Sampler: Adaptively Setting
     Path Lengths in Hamiltonian Monte Carlo \/\/ Journal of Machine Learning
