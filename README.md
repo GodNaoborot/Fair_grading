@@ -46,6 +46,24 @@ python scripts/validate.py              # LOO и PPC        -> results/loo_compa
 `tilted` и `ordered` в базовый прогон не входят и запрашиваются явным
 `--model`.
 
+### Возможные проблемы окружения
+
+Если при запуске `query.py` или `diagnostics.py` возникает
+
+```
+found the following matches with the input file in xarray's IO backends:
+['netcdf4', 'h5netcdf']. But their dependencies may not be installed
+```
+
+в окружении отсутствует движок чтения netCDF. Устраняется установкой
+`h5netcdf` (входит в `requirements.txt`); при установке `arviz` из
+conda-канала он не всегда подтягивается автоматически.
+
+Версии `pymc` и `arviz` заданы в `requirements.txt` намеренно. Код проверен
+на `pymc 5.28` и `arviz 0.23`; на `pymc 6.x` он загружает трассы и отвечает
+на запросы, но построение моделей (`run_mcmc_chi_prior.py`, `validate.py`)
+не тестировалось.
+
 ### Выбор сэмплера
 
 По умолчанию используется nutpie (`--sampler nutpie`) — реализация NUTS,
