@@ -1,13 +1,14 @@
-"""Сравнение трёх вариантов ratio: формы функций + сдвиги в постериорах.
+"""Сравнение трёх вариантов ratio: формы функций и сдвиги в постериорах.
 
 Сохраняет (в results/plots/):
-  ratio_surfaces.png            — 2D-карты ratio(s, d) + ожидаемой оценки
-  ratio_curves.png              — E[grade | s] при разных d
-  ratio_posterior_compare.png   — bar-charts постериорного item_difficulty
-                                   по каждому предмету (4 панели: 2 сем × 2 модели)
-  ratio_hdi_sem1_<model>.png    — forest plot HDI, 3 ratio бок о бок
+  ratio_surfaces.png                — карты ratio(s, d) и ожидаемой оценки
+  ratio_curves.png                  — E[оценка | s] при разных d
+  ratio_posterior_compare.png       — item_difficulty по предметам,
+                                       4 панели (2 семестра × 2 модели)
+  items_hdi_sem{N}_{model}.png      — HDI сложности предметов, 3 ratio рядом
+  students_hdi_sem{N}_{model}.png   — HDI способности студентов, 3 ratio рядом
 """
-import _paths   # noqa: F401  (должен идти первым: подкручивает sys.path)
+import _paths   # noqa: F401  (первым: добавляет src/ в sys.path)
 
 import numpy as np
 import pandas as pd
@@ -20,11 +21,10 @@ from utils import f_2, f_3, f_4, f_5, ratio, RATIO_KINDS
 from _paths import DATA, TRACES, PLOTS
 
 
-# Цветовая палитра для трёх вариантов ratio.
 COLORS = {
-    "legacy_sd": "#1f77b4",   # blue
-    "current":   "#d62728",   # red
-    "sigmoid":   "#2ca02c",   # green
+    "legacy_sd": "#1f77b4",
+    "current":   "#d62728",
+    "sigmoid":   "#2ca02c",
 }
 LABELS = {
     "legacy_sd": "legacy: s / (s + d)",
@@ -40,44 +40,43 @@ def plot_surfaces():
     s = np.linspace(1e-3, 1 - 1e-3, 200)
     d = np.linspace(1e-3, 1 - 1e-3, 200)
     S, D = np.meshgrid(s, d, indexing="ij")
-    grades = np.array([2, 3, 4, 5])
 
     fig, axes = plt.subplots(2, 3, figsize=(15, 9.5))
 
     for col, kind in enumerate(RATIO_KINDS):
         R = ratio(S, D, kind=kind)
 
-        # Top row: ratio(s, d) heatmap
+        # Верхний ряд: сама поверхность ratio(s, d)
         ax = axes[0, col]
         im = ax.imshow(R, origin="lower", extent=[0, 1, 0, 1],
                        vmin=0, vmax=1, cmap="viridis", aspect="equal")
         ax.set_title(f"{LABELS[kind]}\nratio(s, d)", fontsize=11)
-        ax.set_xlabel("d (item difficulty)"); ax.set_ylabel("s (student ability)")
+        ax.set_xlabel("d — сложность предмета"); ax.set_ylabel("s — способность студента")
         cs = ax.contour(d, s, R, levels=[0.2, 0.4, 0.6, 0.8], colors="white", linewidths=0.8)
         ax.clabel(cs, inline=True, fontsize=8, fmt="%.1f")
         plt.colorbar(im, ax=ax, shrink=0.8)
 
-        # Bottom row: E[grade | s, d]
+        # Нижний ряд: ожидаемая оценка при тех же (s, d)
         p2 = f_2(R); p3 = f_3(R); p4 = f_4(R); p5 = f_5(R)
         E = 2 * p2 + 3 * p3 + 4 * p4 + 5 * p5
         ax2 = axes[1, col]
         im2 = ax2.imshow(E, origin="lower", extent=[0, 1, 0, 1],
                          vmin=2, vmax=5, cmap="RdYlGn", aspect="equal")
-        ax2.set_title(f"E[grade | s, d]   range [{E.min():.2f}, {E.max():.2f}]",
+        ax2.set_title(f"E[оценка | s, d], диапазон [{E.min():.2f}, {E.max():.2f}]",
                       fontsize=11)
-        ax2.set_xlabel("d (item difficulty)"); ax2.set_ylabel("s (student ability)")
+        ax2.set_xlabel("d — сложность предмета"); ax2.set_ylabel("s — способность студента")
         cs2 = ax2.contour(d, s, E, levels=[2.5, 3.0, 3.5, 4.0, 4.5],
                           colors="black", linewidths=0.6)
         ax2.clabel(cs2, inline=True, fontsize=8, fmt="%.1f")
         plt.colorbar(im2, ax=ax2, shrink=0.8)
 
-        # Mark the four corner cases on both rows
+        # Пять угловых сценариев из README — на обоих рядах
         for ax_ in (ax, ax2):
             for (ss, dd) in [(0, 1), (0.5, 0.5), (1, 0), (0, 0), (1, 1)]:
                 ax_.scatter([dd], [ss], s=40, c="white",
                             edgecolor="black", lw=1.2, zorder=5)
 
-    fig.suptitle("ratio(s, d) surfaces and resulting E[grade] under three formulations",
+    fig.suptitle("Поверхности ratio(s, d) и соответствующая ожидаемая оценка",
                  fontsize=14, weight="bold")
     fig.tight_layout()
     out = PLOTS / "ratio_surfaces.png"
@@ -93,11 +92,10 @@ def plot_curves():
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.8), sharey=True)
     s = np.linspace(0.01, 0.99, 200)
 
-    # Diagonal slice: s = d -> "equally matched" student & subject
     for ax, d_fixed, ttl in zip(
         axes,
         [None, 0.3, 0.8],
-        ["diagonal: s = d (equally matched)", "d = 0.3 (easy subject)", "d = 0.8 (hard subject)"],
+        ["диагональ s = d", "d = 0.3 (лёгкий предмет)", "d = 0.8 (сложный предмет)"],
     ):
         for kind in RATIO_KINDS:
             if d_fixed is None:
@@ -107,15 +105,15 @@ def plot_curves():
             E = 2 * f_2(R) + 3 * f_3(R) + 4 * f_4(R) + 5 * f_5(R)
             ax.plot(s, E, color=COLORS[kind], lw=2.2, label=LABELS[kind])
         ax.set_title(ttl, fontsize=11)
-        ax.set_xlabel("student ability s")
-        ax.set_ylabel("E[grade | s, d]")
+        ax.set_xlabel("способность студента s")
+        ax.set_ylabel("E[оценка | s, d]")
         ax.set_ylim(1.95, 5.05)
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=8.5, loc="lower right")
         ax.axhline(2, color="grey", ls=":", lw=0.7)
         ax.axhline(5, color="grey", ls=":", lw=0.7)
 
-    fig.suptitle("E[grade | s, d] as a function of student ability under three ratios",
+    fig.suptitle("Ожидаемая оценка как функция способности студента, три варианта ratio",
                  fontsize=13, weight="bold")
     fig.tight_layout()
     out = PLOTS / "ratio_curves.png"
@@ -145,14 +143,13 @@ def plot_posterior_bars():
                                index_col="student_id").columns.tolist()
         traces = load_traces(sem, model)
         if not traces:
-            ax.set_title(f"sem{sem}/{model}: no traces", color="grey")
+            ax.set_title(f"сем {sem} · {model}: трасс нет", color="grey")
             continue
 
         n_item = len(subjects)
         y = np.arange(n_item)
-        w = 0.27   # bar half-width per ratio
-        order = None
-        # use legacy mean for ordering if available, else current
+        w = 0.27   # полувысота полосы на один вариант ratio
+        # Порядок предметов задаём по legacy, чтобы панели были сопоставимы
         anchor = "legacy_sd" if "legacy_sd" in traces else next(iter(traces))
         means_anchor = traces[anchor].posterior["item_difficulty"].mean(
             ("chain", "draw")).values
@@ -169,12 +166,12 @@ def plot_posterior_bars():
         ax.set_yticks(y)
         ax.set_yticklabels([subjects[i] for i in order], fontsize=9)
         ax.set_xlim(0, 1)
-        ax.set_xlabel("posterior mean of item_difficulty")
-        ax.set_title(f"sem {sem} · {model}", fontsize=12, weight="bold")
+        ax.set_xlabel("апостериорное среднее item_difficulty")
+        ax.set_title(f"сем {sem} · {model}", fontsize=12, weight="bold")
         ax.grid(True, axis="x", alpha=0.3)
         ax.legend(loc="lower right", fontsize=8.5)
 
-    fig.suptitle("item_difficulty under three ratio formulations (chi-square prior, current f)",
+    fig.suptitle("item_difficulty при трёх вариантах ratio (chi-square приор)",
                  fontsize=14, weight="bold")
     fig.tight_layout()
     out = PLOTS / "ratio_posterior_compare.png"
@@ -194,10 +191,10 @@ def plot_items_hdi(sem, model):
 
     traces = load_traces(sem, model)
     if len(traces) < 1:
-        print(f"no traces for sem{sem}/{model}")
+        print(f"трасс нет: сем {sem} / {model}")
         return
 
-    # Сортируем предметы по среднему первого доступного варианта (для якоря)
+    # Порядок предметов — по legacy, чтобы панели читались построчно
     anchor = "legacy_sd" if "legacy_sd" in traces else next(iter(traces))
     m_anchor = traces[anchor].posterior["item_difficulty"].mean(
         ("chain", "draw")).values
@@ -257,10 +254,10 @@ def plot_students_hdi(sem, model):
 
     traces = load_traces(sem, model)
     if len(traces) < 1:
-        print(f"no traces for sem{sem}/{model}")
+        print(f"трасс нет: сем {sem} / {model}")
         return
 
-    # Сортируем студентов по среднему sigmoid (или первого доступного варианта)
+    # Порядок студентов — по sigmoid
     anchor = "sigmoid" if "sigmoid" in traces else next(iter(traces))
     m_anchor = traces[anchor].posterior["student_ability"].mean(
         ("chain", "draw")).values

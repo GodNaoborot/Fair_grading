@@ -1,0 +1,12 @@
+[project]
+name = "fair-grading"
+version = "0.1.0"
+description = "Байесовская IRT-модель: разделение способности студента и сложности предмета по матрице оценок"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100

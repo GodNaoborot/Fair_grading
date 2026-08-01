@@ -1,8 +1,9 @@
-# Сырые данные (не версионируются)
+# Исходная выгрузка из деканата не версионируется, обезличенные CSV — да
 *.xls
 *.xlsx
-*.csv
-data/
+
+# Генерится compute_chi_priors.py из data/grades_sem*.csv
+data/chi_priors.json
 
 # Выходные артефакты: трассы и логи игнорируем, графики коммитим
 results/traces/
@@ -11,8 +12,12 @@ results/logs/
 *.log
 *.png
 !results/plots/*.png
+# Графики из scripts/query.py — свои под каждый запрос, версионировать нечего
+results/plots/query_*.png
 
 # Python
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/

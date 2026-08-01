@@ -1,11 +1,14 @@
+"""Парсер выгрузки оценок из Excel в две матрицы (семестр 1 и семестр 2).
+
+Ячейка исходной таблицы выглядит как `4(12.01)3(25.06)` — оценка и дата
+сдачи; по месяцу даты предмет относится к первому или второму семестру.
+"""
 import re
 
 import pandas as pd
-import pickle
-import numpy as np
-from pandas import read_pickle
 
-def parse(input_path:str = 'Grades.xls', sheet_name: str = "23-24 1к 1п"):
+
+def parse(input_path: str = 'Grades.xls', sheet_name: str = "23-24 1к 1п"):
     df = pd.read_excel(input_path, sheet_name=sheet_name)
     to_drop = []
     for key in df.keys():
@@ -75,5 +78,5 @@ def parse(input_path:str = 'Grades.xls', sheet_name: str = "23-24 1к 1п"):
     return df_semester1.to_numpy(dtype='float32'), df_semester2.to_numpy(dtype='float32')
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     print(parse())

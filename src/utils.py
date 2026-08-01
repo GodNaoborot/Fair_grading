@@ -12,8 +12,9 @@
 между способностью студента `s ∈ [0, 1]` и сложностью предмета `d ∈ [0, 1]`:
 
   - "legacy_sd" : s / (s + d)            — симметричен, исходная формула
-  - "current"   : 1 - d * (1 - s)        — асимметричен, текущий дефолт
-  - "sigmoid"   : sigmoid(k * (s - d))   — гладкая S-образная, параметр k
+  - "current"   : 1 - d * (1 - s)        — асимметричен
+  - "sigmoid"   : sigmoid(k * (s - d))   — гладкая S-образная, параметр k;
+                                           текущий дефолт
 
 Функции f_2..f_5 нормированы по построению (f_2 + f_3 + f_4 + f_5 == 1):
 
@@ -37,22 +38,22 @@ import pytensor.tensor as pt
 # Семейство f-функций (унормированные P(оценка))
 # ---------------------------------------------------------------------------
 def f_2(x):
-    """Вес для оценки 2 (логистический спад при росте x)."""
+    """P(оценка = 2). Убывает от 1 при x=0 до 0 при x=1."""
     return ((1 - x) ** 3) / ((1 - x) ** 3 + 10 * x ** 2)
 
 
 def f_5(x):
-    """Вес для оценки 5 — симметрия к f_2."""
+    """P(оценка = 5). Отражение f_2 относительно x = 1/2."""
     return f_2(1 - x)
 
 
 def f_3(x):
-    """Вес для оценки 3 — остаток, смещённый в сторону низкого x."""
+    """P(оценка = 3). Остаток после f_2 и f_5, смещённый к низким x."""
     return (1 - x) * (1 - f_2(x) - f_5(x))
 
 
 def f_4(x):
-    """Вес для оценки 4 — отражение f_3."""
+    """P(оценка = 4). Отражение f_3 относительно x = 1/2."""
     return f_3(1 - x)
 
 
@@ -64,22 +65,22 @@ SIGMOID_K_DEFAULT = 5.0
 
 
 def _is_pt(x):
-    """True если x — переменная pytensor (используем pt.* / pm.math.* вместо np.*)."""
+    """True если x — символьная переменная pytensor, а не numpy-массив."""
     return hasattr(x, "owner")
 
 
 def ratio_legacy_sd(s, d, eps=1e-9):
-    """Исходная формула `s / (s + d)`. Симметрична, корректна при s+d > 0."""
+    """`s / (s + d)`. Симметрична по s ↔ d; при s = d даёт 1/2."""
     return s / (s + d + eps)
 
 
 def ratio_current(s, d):
-    """`1 - d * (1 - s)`. Стремится к 1 в углах (s=0, d=0) и (s=1, d=1) — асимметрично."""
+    """`1 - d * (1 - s)`. Асимметрична: равна 1 и при d=0, и при s=1."""
     return 1.0 - d * (1.0 - s)
 
 
 def ratio_sigmoid(s, d, k=SIGMOID_K_DEFAULT):
-    """`sigmoid(k * (s - d))`. Симметричная гладкая S-кривая; большее k = резче переход."""
+    """`sigmoid(k * (s - d))`. Симметрична; большее k — резче переход."""
     z = k * (s - d)
     if _is_pt(z):
         return pm.math.sigmoid(z)
@@ -93,7 +94,7 @@ RATIO_FUNCTIONS = {
 }
 
 
-def ratio(s, d, kind="current", **kw):
+def ratio(s, d, kind="sigmoid", **kw):
     """Диспетчер: вызывает выбранную ratio-функцию."""
     if kind not in RATIO_FUNCTIONS:
         raise ValueError(f"неизвестный ratio kind {kind!r}; ожидался один из {RATIO_KINDS}")
@@ -103,8 +104,8 @@ def ratio(s, d, kind="current", **kw):
 # ---------------------------------------------------------------------------
 # Внутренние хелперы
 # ---------------------------------------------------------------------------
-def _compute_ratio_pt(a, d, ratio_kind="current", ratio_kwargs=None):
-    """Считает clipped ratio для pytensor."""
+def _compute_ratio_pt(a, d, ratio_kind="sigmoid", ratio_kwargs=None):
+    """Ratio для pytensor, обрезанный в (0, 1) — f_i не определены на границах."""
     ratio_kwargs = ratio_kwargs or {}
     r = ratio(a, d, kind=ratio_kind, **ratio_kwargs)
     eps = 1e-9
@@ -112,14 +113,67 @@ def _compute_ratio_pt(a, d, ratio_kind="current", ratio_kwargs=None):
 
 
 def _likelihood_probs_from_r(r):
-    """Из готового ratio собирает (n_obs, 4) тензор вероятностей оценок."""
-    p2 = f_2(r)
-    p3 = f_3(r)
-    p4 = f_4(r)
-    p5 = f_5(r)
-    probs = pt.stack([p2, p3, p4, p5], axis=1)
-    # Перенормировка на случай небольшого float-дрейфа; сумма ≈ 1 уже.
+    """Из ratio собирает (n_obs, 4) тензор вероятностей оценок."""
+    probs = pt.stack([f_2(r), f_3(r), f_4(r), f_5(r)], axis=1)
+    # Сумма равна 1 по построению; делим только чтобы убрать float-дрейф.
     return probs / probs.sum(axis=1, keepdims=True)
+
+
+GRADES = np.array([2, 3, 4, 5])
+
+# Вырожденные распределения, к которым тянет гейт модели `cond`
+GATE_CONST_2 = np.array([0.997, 0.001, 0.001, 0.001])
+GATE_CONST_5 = np.array([0.001, 0.001, 0.001, 0.997])
+
+# Пороги гейта в координатах ratio. Сдвинуты внутрь относительно краёв
+# намеренно: при 0.1/0.9 гейт срабатывает только там, где f-функции и без
+# него дают 0.997, то есть `cond` становится неотличима от `nocond`.
+# При 0.3/0.7 гейт влияет на середину шкалы — ради чего он и нужен.
+GATE_LO_DEFAULT = 0.3
+GATE_HI_DEFAULT = 0.7
+GATE_TEMP_DEFAULT = 15.0
+
+
+def grade_probs(s, d, ratio_kind="sigmoid", ratio_kwargs=None,
+                gate=False, gate_lo=GATE_LO_DEFAULT, gate_hi=GATE_HI_DEFAULT,
+                gate_temp=GATE_TEMP_DEFAULT):
+    """Вероятности оценок (2, 3, 4, 5) для numpy-входов.
+
+    Повторяет правдоподобие моделей: `gate=False` соответствует `nocond`,
+    `gate=True` — `cond` с теми же порогами. Нужна для апостериорных
+    предсказаний, где выборки s и d уже получены из трассы.
+
+    `s` и `d` broadcast'ятся друг с другом; результат имеет форму
+    `np.broadcast(s, d).shape + (4,)`.
+    """
+    ratio_kwargs = ratio_kwargs or {}
+    r = ratio(np.asarray(s, dtype=float), np.asarray(d, dtype=float),
+              kind=ratio_kind, **ratio_kwargs)
+    eps = 1e-9
+    r = np.clip(r, eps, 1 - eps)
+
+    probs = np.stack([f_2(r), f_3(r), f_4(r), f_5(r)], axis=-1)
+    probs = probs / probs.sum(axis=-1, keepdims=True)
+    if not gate:
+        return probs
+
+    p_extreme_5 = 1.0 / (1.0 + np.exp(-gate_temp * (r - gate_hi)))
+    p_extreme_2 = 1.0 / (1.0 + np.exp(-gate_temp * (gate_lo - r)))
+    # См. комментарий в create_bipartite_bayesian_network_cond: нормировать
+    # сигмоиды друг на друга нельзя, иначе p_middle зануляется.
+    overflow = np.maximum(p_extreme_5 + p_extreme_2, 1.0)
+    p_5 = p_extreme_5 / overflow
+    p_2 = p_extreme_2 / overflow
+    p_middle = 1.0 - p_5 - p_2
+
+    return (p_5[..., None] * GATE_CONST_5
+            + p_2[..., None] * GATE_CONST_2
+            + p_middle[..., None] * probs)
+
+
+def expected_grade(s, d, **kw):
+    """Ожидаемая оценка E[оценка | s, d]. Принимает те же kwargs, что grade_probs."""
+    return grade_probs(s, d, **kw) @ GRADES
 
 
 def _setup_observed(ratings_matrix):
@@ -133,124 +187,148 @@ def _setup_observed(ratings_matrix):
 
 
 # ---------------------------------------------------------------------------
-# Модели
+# Построение моделей (без сэмплирования)
 # ---------------------------------------------------------------------------
-def create_bipartite_bayesian_network_cond(
+def _add_latents(ratings_matrix, student_alpha, student_beta, item_alpha, item_beta):
+    """Общая часть обеих моделей: латентные s, d и индексация наблюдений."""
+    n_students, n_items, obs_rows, obs_cols, obs_shifted = _setup_observed(ratings_matrix)
+
+    student_ability = pm.Beta(
+        "student_ability",
+        alpha=student_alpha, beta=student_beta,
+        shape=n_students,
+    )
+    item_difficulty = pm.Beta(
+        "item_difficulty",
+        alpha=item_alpha, beta=item_beta,
+        shape=n_items,
+    )
+    return student_ability[obs_rows], item_difficulty[obs_cols], obs_shifted
+
+
+def build_model_cond(
     ratings_matrix,
     student_alpha=2, student_beta=2,
     item_alpha=2, item_beta=2,
-    ratio_kind="current", ratio_kwargs=None,
-    gate_lo=0.1, gate_hi=0.9, gate_temp=30.0,
-    draws=1000, tune=2000, chains=4, cores=2,
-    target_accept=0.95, max_tree_depth=30,
+    ratio_kind="sigmoid", ratio_kwargs=None,
+    gate_lo=GATE_LO_DEFAULT, gate_hi=GATE_HI_DEFAULT, gate_temp=GATE_TEMP_DEFAULT,
 ):
     """Двудольная IRT-модель с гейтом крайних оценок (2 и 5).
 
-    Гейт теперь живёт в координатах `ratio` (а не raw a, d): сигмоиды центрированы
-    на `gate_hi` (по умолчанию 0.9 — толкает к пятёрке) и `gate_lo` (0.1 —
-    толкает к двойке). Это согласовано с самой f-моделью: всё работает в одних
-    координатах [0, 1].
+    Гейт задан в координатах `ratio`: сигмоиды центрированы на `gate_hi`
+    (толкает к пятёрке) и `gate_lo` (толкает к двойке), крутизна — `gate_temp`.
 
-    `item_alpha`, `item_beta` могут быть скалярами или массивами длины n_items.
-    `ratio_kind` — один из utils.RATIO_KINDS, `ratio_kwargs` пробрасывается.
+    `item_alpha`, `item_beta` — скаляр или массив длины n_items.
+    `ratio_kind` — один из RATIO_KINDS, `ratio_kwargs` пробрасывается в него.
     """
-    n_students, n_items, obs_rows, obs_cols, obs_shifted = _setup_observed(ratings_matrix)
+    with pm.Model() as model:
+        a, d, obs_shifted = _add_latents(
+            ratings_matrix, student_alpha, student_beta, item_alpha, item_beta)
 
-    with pm.Model() as bipartite_model:
-        # Латентные способности студентов и сложности предметов
-        student_ability = pm.Beta(
-            "student_ability",
-            alpha=student_alpha, beta=student_beta,
-            shape=n_students,
-        )
-        item_difficulty = pm.Beta(
-            "item_difficulty",
-            alpha=item_alpha, beta=item_beta,
-            shape=n_items,
-        )
-
-        # Выбираем s, d для всех наблюдаемых пар (студент, предмет)
-        a = student_ability[obs_rows]
-        d = item_difficulty[obs_cols]
-
-        # Ratio в выбранной системе координат + базовая f-вероятность по оценкам
         r = _compute_ratio_pt(a, d, ratio_kind=ratio_kind, ratio_kwargs=ratio_kwargs)
         else_probs = _likelihood_probs_from_r(r)
 
-        # Жёсткие распределения для крайних оценок (на случай гейта)
-        const_5 = pt.as_tensor_variable([0.001, 0.001, 0.001, 0.997])
-        const_2 = pt.as_tensor_variable([0.997, 0.001, 0.001, 0.001])
+        # Вырожденные распределения, к которым тянет гейт
+        const_5 = pt.as_tensor_variable(GATE_CONST_5)
+        const_2 = pt.as_tensor_variable(GATE_CONST_2)
 
-        # Гейт: центр на gate_hi → пятёрка, центр на gate_lo → двойка.
-        # Оба порога — в координатах ratio, не в raw (a, d).
-        logit_5 = gate_temp * (r - gate_hi)
-        logit_2 = gate_temp * (gate_lo - r)
+        p_extreme_5 = pm.math.sigmoid(gate_temp * (r - gate_hi))
+        p_extreme_2 = pm.math.sigmoid(gate_temp * (gate_lo - r))
 
-        p_extreme_5 = pm.math.sigmoid(logit_5)
-        p_extreme_2 = pm.math.sigmoid(logit_2)
-
-        total_extreme = p_extreme_5 + p_extreme_2
-        p_5 = p_extreme_5 / (total_extreme + 1e-8)
-        p_2 = p_extreme_2 / (total_extreme + 1e-8)
+        # Веса берутся из сигмоид напрямую. Нормировать их друг на друга нельзя:
+        # тогда p_5 + p_2 == 1 тождественно, p_middle зануляется и f_2..f_5
+        # не влияют на правдоподобие вообще. Делим только если сумма превысила 1
+        # (при gate_lo < gate_hi этого не происходит).
+        overflow = pt.maximum(p_extreme_5 + p_extreme_2, 1.0)
+        p_5 = p_extreme_5 / overflow
+        p_2 = p_extreme_2 / overflow
         p_middle = 1.0 - p_5 - p_2
 
-        # Финальное распределение оценок: смесь экстремальных и f-вероятностей
         prob_vec = (
             p_5[:, None] * const_5[None, :]
             + p_2[:, None] * const_2[None, :]
             + p_middle[:, None] * else_probs
         )
-
         pm.Categorical("ratings_obs", p=prob_vec, observed=obs_shifted)
 
-        trace = pm.sample(
+    return model
+
+
+def build_model_nocond(
+    ratings_matrix,
+    student_alpha=2, student_beta=2,
+    item_alpha=2, item_beta=2,
+    ratio_kind="sigmoid", ratio_kwargs=None,
+):
+    """Двудольная IRT-модель БЕЗ гейта: P(оценка) целиком задана f_2..f_5(ratio)."""
+    with pm.Model() as model:
+        a, d, obs_shifted = _add_latents(
+            ratings_matrix, student_alpha, student_beta, item_alpha, item_beta)
+
+        r = _compute_ratio_pt(a, d, ratio_kind=ratio_kind, ratio_kwargs=ratio_kwargs)
+        pm.Categorical("ratings_obs", p=_likelihood_probs_from_r(r),
+                       observed=obs_shifted)
+
+    return model
+
+
+BUILDERS = {"cond": build_model_cond, "nocond": build_model_nocond}
+
+
+# ---------------------------------------------------------------------------
+# Построение + сэмплирование
+# ---------------------------------------------------------------------------
+def _sample(model, draws, tune, chains, cores, target_accept, nuts_sampler,
+            log_likelihood=False):
+    with model:
+        return pm.sample(
             draws=draws, tune=tune, chains=chains, cores=cores,
             target_accept=target_accept, return_inferencedata=True,
-            max_tree_depth=max_tree_depth,
+            nuts_sampler=nuts_sampler,
+            idata_kwargs={"log_likelihood": log_likelihood},
         )
 
-    return trace, bipartite_model
+
+def create_bipartite_bayesian_network_cond(
+    ratings_matrix,
+    student_alpha=2, student_beta=2,
+    item_alpha=2, item_beta=2,
+    ratio_kind="sigmoid", ratio_kwargs=None,
+    gate_lo=GATE_LO_DEFAULT, gate_hi=GATE_HI_DEFAULT, gate_temp=GATE_TEMP_DEFAULT,
+    draws=1000, tune=2000, chains=4, cores=2,
+    target_accept=0.95, nuts_sampler="pymc", log_likelihood=False,
+):
+    """`build_model_cond` + сэмплирование. Возвращает (trace, model)."""
+    model = build_model_cond(
+        ratings_matrix,
+        student_alpha=student_alpha, student_beta=student_beta,
+        item_alpha=item_alpha, item_beta=item_beta,
+        ratio_kind=ratio_kind, ratio_kwargs=ratio_kwargs,
+        gate_lo=gate_lo, gate_hi=gate_hi, gate_temp=gate_temp,
+    )
+    trace = _sample(model, draws, tune, chains, cores, target_accept,
+                    nuts_sampler, log_likelihood)
+    return trace, model
 
 
 def create_bipartite_bayesian_network_nocond(
     ratings_matrix,
     student_alpha=2, student_beta=2,
     item_alpha=2, item_beta=2,
-    ratio_kind="current", ratio_kwargs=None,
+    ratio_kind="sigmoid", ratio_kwargs=None,
     draws=1000, tune=2000, chains=4, cores=2,
-    target_accept=0.95,
+    target_accept=0.95, nuts_sampler="pymc", log_likelihood=False,
 ):
-    """Двудольная IRT-модель БЕЗ гейта крайних оценок.
-
-    Все четыре вероятности оценок берутся напрямую из f_2..f_5(ratio).
-    """
-    n_students, n_items, obs_rows, obs_cols, obs_shifted = _setup_observed(ratings_matrix)
-
-    with pm.Model() as bipartite_model:
-        student_ability = pm.Beta(
-            "student_ability",
-            alpha=student_alpha, beta=student_beta,
-            shape=n_students,
-        )
-        item_difficulty = pm.Beta(
-            "item_difficulty",
-            alpha=item_alpha, beta=item_beta,
-            shape=n_items,
-        )
-
-        a = student_ability[obs_rows]
-        d = item_difficulty[obs_cols]
-        r = _compute_ratio_pt(a, d, ratio_kind=ratio_kind, ratio_kwargs=ratio_kwargs)
-        probs = _likelihood_probs_from_r(r)
-
-        pm.Categorical("ratings_obs", p=probs, observed=obs_shifted)
-
-        trace = pm.sample(
-            draws=draws, tune=tune, chains=chains, cores=cores,
-            target_accept=target_accept, return_inferencedata=True,
-        )
-
-    return trace, bipartite_model
+    """`build_model_nocond` + сэмплирование. Возвращает (trace, model)."""
+    model = build_model_nocond(
+        ratings_matrix,
+        student_alpha=student_alpha, student_beta=student_beta,
+        item_alpha=item_alpha, item_beta=item_beta,
+        ratio_kind=ratio_kind, ratio_kwargs=ratio_kwargs,
+    )
+    trace = _sample(model, draws, tune, chains, cores, target_accept,
+                    nuts_sampler, log_likelihood)
+    return trace, model
 
 
 # ---------------------------------------------------------------------------
@@ -267,9 +345,10 @@ CHI_PRIOR_CONCENTRATION = 4.0
 def chi_square_difficulty(empirical_dist,
                           d_easy=CHI_REF_EASY,
                           d_hard=CHI_REF_HARD):
-    """Оценка сложности предмета через χ²-расстояния до эталонов.
+    """Сложность предмета как относительное χ²-расстояние до двух эталонов.
 
-    Возвращает число из [0, 1]: 0 — выглядит как «лёгкий», 1 — как «сложный».
+    Возвращает число из [0, 1]: 0 — распределение оценок как у «лёгкого»
+    предмета, 1 — как у «сложного».
     """
     e = np.asarray(empirical_dist, dtype=float)
     de = np.asarray(d_easy, dtype=float)
@@ -283,10 +362,10 @@ def chi_square_priors(ratings_matrix,
                       d_easy=CHI_REF_EASY,
                       d_hard=CHI_REF_HARD,
                       concentration=CHI_PRIOR_CONCENTRATION):
-    """Per-item Beta-приор из chi-square оценок.
+    """Per-item Beta-приор с центром в chi-square оценке сложности.
 
-    Концентрация α+β фиксирована (по умолчанию = 4, как у Beta(2,2)) —
-    сохраняется «сила» приора, дисперсия = μ(1-μ)/(s+1).
+    Концентрация α+β фиксирована (по умолчанию 4, как у Beta(2,2)), поэтому
+    «сила» приора одинакова для всех предметов, дисперсия = μ(1-μ)/(α+β+1).
 
     Returns
     -------

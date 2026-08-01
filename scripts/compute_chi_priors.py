@@ -5,7 +5,7 @@ Beta-приор сохраняет концентрацию Beta(2,2) (α + β =
 
 Результат: data/chi_priors.json
 """
-import _paths   # noqa: F401  (должен идти первым: подкручивает sys.path)
+import _paths   # noqa: F401  (первым: добавляет src/ в sys.path)
 
 import json
 import pandas as pd
@@ -16,12 +16,12 @@ from _paths import DATA
 
 if __name__ == "__main__":
     out = {}
-    print("Beta(2,2): variance(at mu=0.5) = 0.05, concentration alpha+beta = 4\n")
+    print("Концентрация приора alpha+beta = 4 (как у Beta(2,2)), дисперсия при mu=0.5 равна 0.05\n")
     for sem in (1, 2):
         df = pd.read_csv(DATA / f"grades_sem{sem}.csv", index_col="student_id")
         mat = df.to_numpy(dtype="float32")
         alpha, beta, mu = chi_square_priors(mat)
-        print(f"==== Семестр {sem} ({df.shape[0]} студентов × {df.shape[1]} предметов) ====")
+        print(f"==== Семестр {sem} ({df.shape[0]} студентов x {df.shape[1]} предметов) ====")
         rows = []
         for j, subj in enumerate(df.columns):
             print(f"  {subj:45s}  chi={mu[j]:.3f}  -> Beta(a={alpha[j]:.2f}, b={beta[j]:.2f})")

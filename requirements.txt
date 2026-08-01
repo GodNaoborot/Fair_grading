@@ -1,21 +1,27 @@
-# Sampling & inference
+# Сэмплирование и вывод
 pymc>=5.20,<6
 arviz>=0.18
 pytensor>=2.20
+# NUTS через numba/Rust. Нужен потому, что без C++-компилятора родной бэкенд
+# PyTensor разворачивается в чистый Python и сэмплирование становится
+# неприменимо медленным (см. раздел «Сэмплер» в README).
+nutpie>=0.13
 
-# Numerics
+# Численные библиотеки
 numpy>=2.0
 pandas>=2.0
 scipy>=1.13
 
-# Plotting
+# Графики
 matplotlib>=3.8
 
-# Notebook environment
+# Ноутбуки
 jupyter
 ipykernel
 
-# (data scraping / parser_lib)
-beautifulsoup4
-requests
+# Тесты
+pytest>=8.0
+
+# Парсер исходной выгрузки (src/parser_lib.py)
 openpyxl
+xlrd>=2.0
