@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import arviz as az
 
+import az_compat
 from utils import GRADES, grade_probs, grade_probs_ordered, grade_probs_tilted
 
 HDI_PROB = 0.94
@@ -106,7 +107,7 @@ class Summary:
 
 
 def summarize(samples, hdi_prob=HDI_PROB):
-    lo, hi = az.hdi(np.asarray(samples), hdi_prob=hdi_prob)
+    lo, hi = np.asarray(az_compat.hdi(np.asarray(samples), hdi_prob)).ravel()[:2]
     return Summary(mean=float(np.mean(samples)), sd=float(np.std(samples)),
                    hdi_low=float(lo), hdi_high=float(hi))
 

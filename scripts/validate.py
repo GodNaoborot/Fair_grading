@@ -30,6 +30,8 @@ import numpy as np
 import pandas as pd
 import pymc as pm
 import arviz as az
+
+import az_compat
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -102,7 +104,7 @@ def compare_semester(sem, thin):
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        table = az.compare(idatas, ic="loo")
+        table = az_compat.compare(idatas)
     table["bad_pareto_k"] = [bad_k[i] for i in table.index]
 
     out = RESULTS / f"loo_compare_sem{sem}.csv"

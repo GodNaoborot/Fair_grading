@@ -17,6 +17,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import arviz as az
 
+import az_compat
+
 from utils import f_2, f_3, f_4, f_5, ratio, RATIO_KINDS
 from _paths import DATA, TRACES, PLOTS
 
@@ -210,8 +212,7 @@ def plot_items_hdi(sem, model):
     for ax, kind in zip(axes, [k for k in RATIO_KINDS if k in traces]):
         t = traces[kind]
         means = t.posterior["item_difficulty"].mean(("chain", "draw")).values
-        hdi = az.hdi(t, var_names=["item_difficulty"],
-                     hdi_prob=0.94)["item_difficulty"].values
+        hdi = az_compat.hdi(t, 0.94, var_names=["item_difficulty"])["item_difficulty"].values
         color = COLORS[kind]
         for yi, i in enumerate(order):
             ax.plot([hdi[i, 0], hdi[i, 1]], [yi, yi],
@@ -271,8 +272,7 @@ def plot_students_hdi(sem, model):
     for kind in [k for k in RATIO_KINDS if k in traces]:
         t = traces[kind]
         means = t.posterior["student_ability"].mean(("chain", "draw")).values
-        hdi = az.hdi(t, var_names=["student_ability"],
-                     hdi_prob=0.94)["student_ability"].values
+        hdi = az_compat.hdi(t, 0.94, var_names=["student_ability"])["student_ability"].values
         color = COLORS[kind]
         off = offsets[kind]
         for yi, i in enumerate(order):
