@@ -35,3 +35,6 @@ __pycache__/
 Thumbs.db
 
 *.tex
+
+# PDF отчёта пересобирается из report.typ и results/*.csv
+report/*.pdf

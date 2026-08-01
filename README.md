@@ -54,6 +54,7 @@ python scripts/compute_chi_priors.py    # приоры сложности -> dat
 python scripts/run_mcmc_chi_prior.py    # MCMC             -> results/traces/*.nc
 python scripts/diagnostics.py           # сходимость       -> results/diagnostics.csv
 python scripts/validate.py              # LOO и PPC        -> results/loo_compare_*.csv
+python scripts/build_report.py          # PDF-статья       -> report/fair_grading.pdf
 ```
 
 Посчитанные трассы переиспользуются, повторный запуск их не пересчитывает.
@@ -422,11 +423,14 @@ scripts/
   query.py                   CLI запросов к модели
   plot_ratio_comparison.py   сравнительные графики формул ratio
   plot_f_functions.py        формы f-функций
+  build_report.py            сборка PDF-статьи из report/report.typ
 notebooks/
   model_comparison.ipynb     разбор формул ratio и семейств правдоподобия
   chi_square.ipynb           подбор эталонов для chi-square приора
   test_synthetic_data.ipynb  восстановление параметров на синтетике
   parser_test.ipynb          разбор исходной таблицы
+report/
+  report.typ                   исходник статьи; таблицы читает из results/*.csv
 tests/
   test_model.py                свойства f, ratio, вероятностей и приоров
   test_numpy_matches_pymc.py   эквивалентность numpy-формул и PyMC-моделей
