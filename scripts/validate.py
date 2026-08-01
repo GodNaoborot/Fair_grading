@@ -7,11 +7,16 @@
      сложность модели. Сравнение делается ОТДЕЛЬНО по каждому семестру:
      LOO сопоставим только между моделями, обученными на одних наблюдениях.
 
-  2. Похожи ли данные, порождённые моделью, на настоящие? Из постериора
+  2. Насколько точно модель воспроизводит уже известные оценки? Считается
+     log predictive density, доля угаданных оценок и MAE — ровно на тех
+     вероятностях, которые выдаёт scripts/query.py. Метрики выборочные,
+     поэтому дополняют LOO, а не заменяют его.
+
+  3. Похожи ли данные, порождённые моделью, на настоящие? Из постериора
      сэмплируются оценки и их распределение сравнивается с фактическим.
 
-Результат: results/loo_compare_sem{1,2}.csv, results/ppc_summary.csv,
-           results/plots/ppc_sem{1,2}.png
+Результат: results/loo_compare_sem{1,2}.csv, results/predictive_scores.csv,
+           results/ppc_summary.csv, results/plots/ppc_sem{1,2}.png
 
     python scripts/validate.py
     python scripts/validate.py --thin 4     # реже прорежать (точнее, дольше)
@@ -29,7 +34,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from utils import BUILDERS, GRADES, chi_square_priors, RATIO_KINDS
+from utils import BUILDERS, GRADES, chi_square_priors, grade_probs, RATIO_KINDS
 from _paths import DATA, TRACES, RESULTS, PLOTS
 
 # Сколько draws оставить для LOO. Полная трасса — 16000 draws × ~1100
@@ -108,7 +113,50 @@ def compare_semester(sem, thin):
 
 
 # ---------------------------------------------------------------------------
-# (2) Posterior predictive check
+# (2) Прямая предсказательная точность на наблюдённых оценках
+# ---------------------------------------------------------------------------
+def predictive_scores(sem, thin):
+    """Насколько хорошо модель угадывает уже известные оценки.
+
+    Дополняет LOO: тот оценивает предсказание вне выборки и штрафует за
+    сложность, а здесь считается ровно то, что выдаёт scripts/query.py —
+    вероятности с маргинализацией по постериору. Метрики выборочные (модель
+    эти оценки видела), поэтому смотреть их надо ВМЕСТЕ с LOO, а не вместо.
+    """
+    df, matrix = load(sem)
+    obs_r, obs_c = np.where(~np.isnan(matrix))
+    actual = matrix[obs_r, obs_c].astype(int)
+    idx = actual - 2
+
+    rows = []
+    for variant in ("cond", "nocond"):
+        for ratio_kind in RATIO_KINDS:
+            path = TRACES / f"trace_sem{sem}_{variant}_{ratio_kind}.nc"
+            if not path.exists():
+                continue
+            idata = az.from_netcdf(path).sel(draw=slice(None, None, thin))
+            s = idata.posterior["student_ability"].values.reshape(-1, matrix.shape[0])
+            d = idata.posterior["item_difficulty"].values.reshape(-1, matrix.shape[1])
+
+            total = np.zeros((len(actual), len(GRADES)))
+            for s_draw, d_draw in zip(s, d):
+                total += grade_probs(s_draw[obs_r], d_draw[obs_c],
+                                     ratio_kind=ratio_kind, gate=(variant == "cond"))
+            probs = total / len(s)
+
+            p_actual = probs[np.arange(len(idx)), idx]
+            predicted = GRADES[probs.argmax(axis=1)]
+            rows.append({
+                "sem": sem, "model": variant, "ratio": ratio_kind,
+                "log_pred": round(float(np.log(p_actual).mean()), 4),
+                "accuracy": round(float((predicted == actual).mean()), 4),
+                "mae": round(float(np.abs(probs @ GRADES - actual).mean()), 4),
+            })
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# (3) Posterior predictive check
 # ---------------------------------------------------------------------------
 def ppc_semester(sem, variant, ratio_kind, thin):
     """Сравнивает распределение оценок из модели с фактическим."""
@@ -175,7 +223,7 @@ def build_parser():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--thin", type=int, default=DEFAULT_THIN,
                    help=f"брать каждый N-й draw (по умолчанию {DEFAULT_THIN})")
-    p.add_argument("--model", default="cond", choices=tuple(BUILDERS),
+    p.add_argument("--model", default="nocond", choices=tuple(BUILDERS),
                    help="какую конфигурацию проверять через PPC")
     p.add_argument("--ratio", default="sigmoid", choices=RATIO_KINDS)
     return p
@@ -186,6 +234,18 @@ def main(argv=None):
 
     for sem in (1, 2):
         compare_semester(sem, args.thin)
+
+    print("\n=== Предсказательная точность на наблюдённых оценках ===")
+    score_rows = []
+    for sem in (1, 2):
+        score_rows.extend(predictive_scores(sem, args.thin))
+    if score_rows:
+        scores = pd.DataFrame(score_rows).sort_values(
+            ["sem", "log_pred"], ascending=[True, False])
+        print(scores.to_string(index=False))
+        out = RESULTS / "predictive_scores.csv"
+        scores.to_csv(out, index=False)
+        print(f"сохранено: {out}")
 
     print(f"\n=== Posterior predictive check: {args.model} · {args.ratio} ===")
     ppc_rows = []

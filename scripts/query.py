@@ -44,8 +44,8 @@ def build_parser():
                    help="номер семестра (по умолчанию 1)")
     p.add_argument("--student", help="student_id из data/grades_sem*.csv")
     p.add_argument("--subject", help="название предмета (можно часть названия)")
-    p.add_argument("--model", choices=("cond", "nocond"), default="cond",
-                   help="вариант модели: с гейтом крайних оценок или без (по умолчанию cond)")
+    p.add_argument("--model", choices=("cond", "nocond"), default="nocond",
+                   help="вариант модели: с гейтом крайних оценок или без (по умолчанию nocond)")
     p.add_argument("--ratio", choices=RATIO_KINDS, default="sigmoid",
                    help="формула совпадения студент/предмет (по умолчанию sigmoid)")
     p.add_argument("--list", action="store_true",
