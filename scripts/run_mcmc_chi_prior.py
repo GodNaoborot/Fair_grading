@@ -16,18 +16,16 @@ import numpy as np
 import pandas as pd
 import arviz as az
 
-from utils import (
-    create_bipartite_bayesian_network_cond,
-    create_bipartite_bayesian_network_nocond,
-    chi_square_priors,
-    RATIO_KINDS,
-)
+import pymc as pm
+
+from utils import BUILDERS, chi_square_priors, RATIO_KINDS
 from _paths import DATA, TRACES
 
-MODELS = {
-    "cond":   create_bipartite_bayesian_network_cond,
-    "nocond": create_bipartite_bayesian_network_nocond,
-}
+MODELS = tuple(BUILDERS)
+# Базовый набор: только эти комбинации считаются, если не указано иное.
+# tilted/ordered — альтернативные правдоподобия, они сравниваются с nocond
+# в scripts/validate.py и запускаются явным --model.
+DEFAULT_MODELS = ("cond", "nocond")
 
 # log_likelihood не пишем в трассу: это (draws × n_obs) float64, то есть
 # сотни мегабайт на файл. scripts/validate.py досчитывает его на прорежённой
@@ -57,7 +55,7 @@ def sanitize_attrs(trace):
     return trace
 
 
-def run_or_load(name, fn, mat, item_alpha, item_beta, ratio_kind, sampler):
+def run_or_load(name, variant, mat, item_alpha, item_beta, ratio_kind, sampler):
     path = TRACES / f"{name}.nc"
     if path.exists():
         print(f"[кэш] {name}")
@@ -66,12 +64,10 @@ def run_or_load(name, fn, mat, item_alpha, item_beta, ratio_kind, sampler):
     print(f"[счёт] {name} ...", flush=True)
     started = time.time()
     np.random.seed(42)
-    trace, _ = fn(
-        mat,
-        item_alpha=item_alpha, item_beta=item_beta,
-        ratio_kind=ratio_kind,
-        **sampler,
-    )
+    model = BUILDERS[variant](
+        mat, item_alpha=item_alpha, item_beta=item_beta, ratio_kind=ratio_kind)
+    with model:
+        trace = pm.sample(return_inferencedata=True, **sampler)
     sanitize_attrs(trace).to_netcdf(path)
     print(f"[готово] {name}  за {time.time() - started:.0f} с")
     return trace
@@ -112,7 +108,7 @@ def main(argv=None):
         print("режим --quick: черновые настройки, диагностики будут слабые\n")
 
     semesters = args.sem or [1, 2]
-    models = args.model or list(MODELS)
+    models = args.model or list(DEFAULT_MODELS)
     ratios = args.ratio or list(RATIO_KINDS)
 
     total_started = time.time()
@@ -129,7 +125,7 @@ def main(argv=None):
             for variant in models:
                 run_or_load(
                     name=f"trace_sem{sem}_{variant}_{ratio_kind}",
-                    fn=MODELS[variant],
+                    variant=variant,
                     mat=mat,
                     item_alpha=alpha,
                     item_beta=beta,

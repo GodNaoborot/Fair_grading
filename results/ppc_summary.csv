@@ -1,9 +1,9 @@
 sem,model,ratio,оценка,факт,модель,интервал_lo,интервал_hi,попал
-1,nocond,sigmoid,2,0.0199,0.0508,0.0355,0.0668,False
-1,nocond,sigmoid,3,0.3253,0.2341,0.2017,0.2642,False
-1,nocond,sigmoid,4,0.2571,0.3183,0.284,0.3551,False
-1,nocond,sigmoid,5,0.3977,0.3968,0.3665,0.429,True
-2,nocond,sigmoid,2,0.0232,0.0388,0.028,0.0522,False
-2,nocond,sigmoid,3,0.2795,0.2194,0.1953,0.2437,False
-2,nocond,sigmoid,4,0.2853,0.3379,0.3095,0.3656,False
-2,nocond,sigmoid,5,0.412,0.4039,0.3762,0.4342,True
+1,ordered,sigmoid,2,0.0199,0.02,0.0085,0.0348,True
+1,ordered,sigmoid,3,0.3253,0.3446,0.3068,0.3813,True
+1,ordered,sigmoid,4,0.2571,0.2568,0.216,0.2975,True
+1,ordered,sigmoid,5,0.3977,0.3785,0.3388,0.4218,True
+2,ordered,sigmoid,2,0.0232,0.0227,0.0126,0.0358,True
+2,ordered,sigmoid,3,0.2795,0.2821,0.2534,0.3148,True
+2,ordered,sigmoid,4,0.2853,0.287,0.2481,0.3221,True
+2,ordered,sigmoid,5,0.412,0.4083,0.3772,0.4371,True

@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from utils import (  # noqa: E402
     f_2, f_3, f_4, f_5, ratio, RATIO_KINDS, GRADES,
-    grade_probs, expected_grade,
+    grade_probs, expected_grade, grade_probs_tilted, grade_probs_ordered,
     chi_square_difficulty, chi_square_priors,
     CHI_REF_EASY, CHI_REF_HARD, CHI_PRIOR_CONCENTRATION,
     GATE_LO_DEFAULT, GATE_HI_DEFAULT,
@@ -167,6 +167,61 @@ def test_gate_never_makes_middle_grades_impossible(kind):
     p = grade_probs(s, d, ratio_kind=kind, gate=True)
     assert np.all(p[..., 1] > 1e-3), f"{kind}: тройка стала невозможной"
     assert np.all(p[..., 2] > 1e-3), f"{kind}: четвёрка стала невозможной"
+
+
+# ---------------------------------------------------------------------------
+# Альтернативные семейства правдоподобия
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("kind", RATIO_KINDS)
+def test_tilted_is_a_distribution(kind):
+    s, d = np.meshgrid(GRID, GRID)
+    p = grade_probs_tilted(s, d, [0.05, 0.3, 0.3, 0.35], ratio_kind=kind)
+    assert p.shape == s.shape + (4,)
+    assert np.all(p >= 0)
+    assert np.allclose(p.sum(axis=-1), 1.0, atol=1e-9)
+
+
+def test_tilted_with_flat_weights_equals_base():
+    """Равные веса не должны ничего менять — это тождественный наклон."""
+    base = grade_probs(GRID, 1 - GRID, ratio_kind="sigmoid")
+    flat = grade_probs_tilted(GRID, 1 - GRID, np.full(4, 0.25), ratio_kind="sigmoid")
+    assert np.allclose(base, flat, atol=1e-12)
+
+
+def test_tilted_shifts_marginal_in_the_expected_direction():
+    """Уменьшение веса двойки должно уменьшать её вероятность везде."""
+    kw = dict(ratio_kind="sigmoid")
+    base = grade_probs_tilted(GRID, 1 - GRID, [0.25, 0.25, 0.25, 0.25], **kw)
+    fewer_twos = grade_probs_tilted(GRID, 1 - GRID, [0.02, 0.33, 0.32, 0.33], **kw)
+    assert np.all(fewer_twos[..., 0] <= base[..., 0] + 1e-12)
+
+
+@pytest.mark.parametrize("kind", RATIO_KINDS)
+def test_ordered_is_a_distribution(kind):
+    s, d = np.meshgrid(GRID, GRID)
+    p = grade_probs_ordered(s, d, [-2.0, 0.0, 2.0], ratio_kind=kind)
+    assert p.shape == s.shape + (4,)
+    assert np.all(p >= -1e-12)
+    assert np.allclose(p.sum(axis=-1), 1.0, atol=1e-9)
+
+
+@pytest.mark.parametrize("kind", RATIO_KINDS)
+def test_ordered_is_stochastically_monotone(kind):
+    """Более способный студент не может иметь больше шансов на двойку."""
+    for d in (0.3, 0.5, 0.7):
+        p = grade_probs_ordered(GRID, np.full_like(GRID, d), [-2.0, 0.0, 2.0],
+                                ratio_kind=kind)
+        assert np.all(np.diff(p[..., 0]) <= 1e-12), f"{kind}: P(2) растёт по s"
+        assert np.all(np.diff(p[..., 3]) >= -1e-12), f"{kind}: P(5) падает по s"
+
+
+def test_ordered_cutpoints_control_marginal_share():
+    """Сдвиг всех порогов вниз должен снижать долю низких оценок."""
+    kw = dict(ratio_kind="sigmoid")
+    strict = grade_probs_ordered(GRID, 1 - GRID, [-1.0, 1.0, 3.0], **kw)
+    lenient = grade_probs_ordered(GRID, 1 - GRID, [-3.0, -1.0, 1.0], **kw)
+    assert lenient[..., 0].mean() < strict[..., 0].mean()
+    assert lenient[..., 3].mean() > strict[..., 3].mean()
 
 
 # ---------------------------------------------------------------------------

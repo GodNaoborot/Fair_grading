@@ -34,7 +34,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from utils import BUILDERS, GRADES, chi_square_priors, grade_probs, RATIO_KINDS
+from utils import (
+    BUILDERS, GRADES, chi_square_priors, RATIO_KINDS,
+    grade_probs, grade_probs_ordered, grade_probs_tilted,
+)
 from _paths import DATA, TRACES, RESULTS, PLOTS
 
 # Сколько draws оставить для LOO. Полная трасса — 16000 draws × ~1100
@@ -77,7 +80,7 @@ def compare_semester(sem, thin):
     print(f"\n=== Семестр {sem}: LOO-сравнение шести конфигураций ===")
 
     idatas, bad_k = {}, {}
-    for variant in ("cond", "nocond"):
+    for variant in BUILDERS:
         for ratio_kind in RATIO_KINDS:
             name = f"{variant}_{ratio_kind}"
             idata, _ = trace_with_loglik(sem, variant, ratio_kind, matrix, thin)
@@ -115,6 +118,29 @@ def compare_semester(sem, thin):
 # ---------------------------------------------------------------------------
 # (2) Прямая предсказательная точность на наблюдённых оценках
 # ---------------------------------------------------------------------------
+# Каждому варианту модели соответствует свой numpy-двойник правдоподобия и
+# своя дополнительная переменная в постериоре (у cond/nocond её нет).
+EXTRA_VAR = {"tilted": "grade_weights", "ordered": "cutpoints"}
+
+
+def _extra_params(posterior, variant, n_draws):
+    """Выборки дополнительного параметра варианта, выровненные по draws."""
+    var = EXTRA_VAR.get(variant)
+    if var is None:
+        return None
+    return posterior[var].values.reshape(n_draws, -1)
+
+
+def _probs_for(variant, s, d, ratio_kind, extra):
+    """Вероятности оценок для одного draw — тем же правдоподобием, что в модели."""
+    if variant == "tilted":
+        return grade_probs_tilted(s, d, extra, ratio_kind=ratio_kind)
+    if variant == "ordered":
+        return grade_probs_ordered(s, d, extra, ratio_kind=ratio_kind)
+    return grade_probs(s, d, ratio_kind=ratio_kind, gate=(variant == "cond"))
+
+
+
 def predictive_scores(sem, thin):
     """Насколько хорошо модель угадывает уже известные оценки.
 
@@ -129,19 +155,21 @@ def predictive_scores(sem, thin):
     idx = actual - 2
 
     rows = []
-    for variant in ("cond", "nocond"):
+    for variant in BUILDERS:
         for ratio_kind in RATIO_KINDS:
             path = TRACES / f"trace_sem{sem}_{variant}_{ratio_kind}.nc"
             if not path.exists():
                 continue
             idata = az.from_netcdf(path).sel(draw=slice(None, None, thin))
-            s = idata.posterior["student_ability"].values.reshape(-1, matrix.shape[0])
-            d = idata.posterior["item_difficulty"].values.reshape(-1, matrix.shape[1])
+            post = idata.posterior
+            s = post["student_ability"].values.reshape(-1, matrix.shape[0])
+            d = post["item_difficulty"].values.reshape(-1, matrix.shape[1])
+            extra = _extra_params(post, variant, len(s))
 
             total = np.zeros((len(actual), len(GRADES)))
-            for s_draw, d_draw in zip(s, d):
-                total += grade_probs(s_draw[obs_r], d_draw[obs_c],
-                                     ratio_kind=ratio_kind, gate=(variant == "cond"))
+            for i, (s_draw, d_draw) in enumerate(zip(s, d)):
+                total += _probs_for(variant, s_draw[obs_r], d_draw[obs_c],
+                                    ratio_kind, None if extra is None else extra[i])
             probs = total / len(s)
 
             p_actual = probs[np.arange(len(idx)), idx]

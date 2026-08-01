@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import arviz as az
 
-from utils import GRADES, grade_probs
+from utils import GRADES, grade_probs, grade_probs_ordered, grade_probs_tilted
 
 HDI_PROB = 0.94
 
@@ -121,18 +121,45 @@ def rank_of(trace, var_name, idx):
 # ---------------------------------------------------------------------------
 # Предсказание оценки
 # ---------------------------------------------------------------------------
+# Дополнительная переменная постериора для вариантов, у которых правдоподобие
+# не задаётся одними (s, d). У cond/nocond её нет.
+EXTRA_VAR = {"tilted": "grade_weights", "ordered": "cutpoints"}
+
+
+def _extra_samples(trace, variant, n_draws):
+    var = EXTRA_VAR.get(variant)
+    if var is None:
+        return None
+    return trace.posterior[var].values.reshape(n_draws, -1)
+
+
+def probs_for_draw(variant, s, d, ratio_kind, extra=None):
+    """Вероятности оценок для одного draw — тем же правдоподобием, что в модели."""
+    if variant == "tilted":
+        return grade_probs_tilted(s, d, extra, ratio_kind=ratio_kind)
+    if variant == "ordered":
+        return grade_probs_ordered(s, d, extra, ratio_kind=ratio_kind)
+    return grade_probs(s, d, ratio_kind=ratio_kind, gate=(variant == "cond"))
+
+
 def predicted_grade_distribution(trace, student_idx, item_idx,
-                                 ratio_kind, gate):
+                                 ratio_kind, variant):
     """Апостериорное распределение оценки для пары (студент, предмет).
 
-    Для каждой пары выборок (s, d) считается вектор вероятностей оценок,
-    затем усредняется по выборкам — это маргинализация по неопределённости
-    в s и d, а не подстановка средних значений.
+    Для каждого draw считается вектор вероятностей оценок, затем усредняется
+    по draws — это маргинализация по неопределённости в параметрах, а не
+    подстановка их средних значений.
     """
     s = student_samples(trace, student_idx)
     d = item_samples(trace, item_idx)
-    probs = grade_probs(s, d, ratio_kind=ratio_kind, gate=gate)
-    return probs.mean(axis=0)
+    extra = _extra_samples(trace, variant, len(s))
+    if extra is None:
+        return probs_for_draw(variant, s, d, ratio_kind).mean(axis=0)
+
+    total = np.zeros(len(GRADES))
+    for i in range(len(s)):
+        total += probs_for_draw(variant, s[i], d[i], ratio_kind, extra[i])
+    return total / len(s)
 
 
 def observed_grade(grades, student_idx, item_idx):

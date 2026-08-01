@@ -25,7 +25,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from utils import GRADES, RATIO_KINDS
+from utils import BUILDERS, GRADES, RATIO_KINDS
 from query import (
     HDI_PROB, load_grades, load_trace, resolve_student, resolve_subject,
     student_samples, item_samples, summarize, rank_of,
@@ -44,8 +44,8 @@ def build_parser():
                    help="номер семестра (по умолчанию 1)")
     p.add_argument("--student", help="student_id из data/grades_sem*.csv")
     p.add_argument("--subject", help="название предмета (можно часть названия)")
-    p.add_argument("--model", choices=("cond", "nocond"), default="nocond",
-                   help="вариант модели: с гейтом крайних оценок или без (по умолчанию nocond)")
+    p.add_argument("--model", choices=tuple(BUILDERS), default="ordered",
+                   help="семейство правдоподобия (по умолчанию ordered)")
     p.add_argument("--ratio", choices=RATIO_KINDS, default="sigmoid",
                    help="формула совпадения студент/предмет (по умолчанию sigmoid)")
     p.add_argument("--list", action="store_true",
@@ -70,7 +70,7 @@ def cmd_list(grades, sem):
         print(f"  [{j}] {name}   ({filled} оценок)")
 
 
-def report_student(trace, grades, student_idx, sid, ratio_kind, gate):
+def report_student(trace, grades, student_idx, sid, ratio_kind, variant):
     samples = student_samples(trace, student_idx)
     stats = summarize(samples)
     rank, total = rank_of(trace, "student_ability", student_idx)
@@ -88,7 +88,7 @@ def report_student(trace, grades, student_idx, sid, ratio_kind, gate):
     print_header("Прогноз по сданным предметам")
     print(f"  {'предмет':<45} {'факт':>5} {'E[оценка]':>10} {'P(факт)':>9}")
     for j, name in taken:
-        probs = predicted_grade_distribution(trace, student_idx, j, ratio_kind, gate)
+        probs = predicted_grade_distribution(trace, student_idx, j, ratio_kind, variant)
         actual = int(row.iloc[j])
         expected = float(probs @ GRADES)
         p_actual = float(probs[GRADES == actual][0])
@@ -115,8 +115,8 @@ def report_subject(trace, grades, item_idx, subject):
 
 
 def report_pair(trace, grades, student_idx, sid, item_idx, subject,
-                ratio_kind, gate):
-    probs = predicted_grade_distribution(trace, student_idx, item_idx, ratio_kind, gate)
+                ratio_kind, variant):
+    probs = predicted_grade_distribution(trace, student_idx, item_idx, ratio_kind, variant)
     actual = observed_grade(grades, student_idx, item_idx)
 
     print_header(f"Студент #{sid} × «{subject}»")
@@ -184,7 +184,6 @@ def main(argv=None):
         return 2
 
     trace = load_trace(TRACES, args.sem, args.model, args.ratio)
-    gate = args.model == "cond"
     print(f"трасса: сем {args.sem} · {args.model} · ratio={args.ratio}")
 
     student_idx = sid = item_idx = subject = None
@@ -196,7 +195,7 @@ def main(argv=None):
         item_idx, subject = resolve_subject(grades, args.subject)
 
     if student_idx is not None and item_idx is None:
-        s_samples = report_student(trace, grades, student_idx, sid, args.ratio, gate)
+        s_samples = report_student(trace, grades, student_idx, sid, args.ratio, args.model)
     elif item_idx is not None and student_idx is None:
         d_samples = report_subject(trace, grades, item_idx, subject)
     else:
@@ -207,7 +206,7 @@ def main(argv=None):
         print_header(f"Предмет «{subject}»")
         print(f"  сложность d   : {summarize(d_samples)}")
         pair_probs = report_pair(trace, grades, student_idx, sid, item_idx,
-                                 subject, args.ratio, gate)
+                                 subject, args.ratio, args.model)
 
     if args.plot:
         parts = [f"sem{args.sem}", args.model, args.ratio]

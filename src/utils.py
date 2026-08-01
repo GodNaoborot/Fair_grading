@@ -171,6 +171,33 @@ def grade_probs(s, d, ratio_kind="sigmoid", ratio_kwargs=None,
             + p_middle[..., None] * probs)
 
 
+def grade_probs_tilted(s, d, weights, ratio_kind="sigmoid", ratio_kwargs=None):
+    """numpy-двойник build_model_tilted: p_k ∝ w_k · f_k(ratio)."""
+    base = grade_probs(s, d, ratio_kind=ratio_kind, ratio_kwargs=ratio_kwargs,
+                       gate=False)
+    tilted = base * np.asarray(weights, dtype=float)
+    return tilted / tilted.sum(axis=-1, keepdims=True)
+
+
+def grade_probs_ordered(s, d, cutpoints, ratio_kind="sigmoid", ratio_kwargs=None):
+    """numpy-двойник build_model_ordered: P(оценка ≤ k) = sigmoid(c_k − logit(ratio))."""
+    ratio_kwargs = ratio_kwargs or {}
+    r = ratio(np.asarray(s, dtype=float), np.asarray(d, dtype=float),
+              kind=ratio_kind, **ratio_kwargs)
+    eps = 1e-9
+    r = np.clip(r, eps, 1 - eps)
+    z = np.log(r) - np.log1p(-r)
+
+    c = np.asarray(cutpoints, dtype=float)
+    cum = 1.0 / (1.0 + np.exp(-(c - z[..., None])))   # P(оценка ≤ k), k = 2, 3, 4
+    return np.stack([
+        cum[..., 0],
+        cum[..., 1] - cum[..., 0],
+        cum[..., 2] - cum[..., 1],
+        1.0 - cum[..., 2],
+    ], axis=-1)
+
+
 def expected_grade(s, d, **kw):
     """Ожидаемая оценка E[оценка | s, d]. Принимает те же kwargs, что grade_probs."""
     return grade_probs(s, d, **kw) @ GRADES
@@ -272,7 +299,90 @@ def build_model_nocond(
     return model
 
 
-BUILDERS = {"cond": build_model_cond, "nocond": build_model_nocond}
+def build_model_tilted(
+    ratings_matrix,
+    student_alpha=2, student_beta=2,
+    item_alpha=2, item_beta=2,
+    ratio_kind="sigmoid", ratio_kwargs=None,
+    weight_concentration=1.0,
+):
+    """`nocond` + свободные веса оценок: p_k ∝ w_k · f_k(ratio), w ~ Dirichlet.
+
+    Форма зависимости от ratio остаётся прежней, но модель сама решает,
+    насколько каждая оценка вообще распространена. Это минимальная правка,
+    снимающая главный источник смещения фиксированного семейства: оно не
+    умеет давать «двоек почти нет, троек треть».
+
+    Стоимость — 3 свободных параметра (4 веса минус нормировка) на сотни
+    наблюдений, то есть прирост variance пренебрежимый.
+    """
+    with pm.Model() as model:
+        a, d, obs_shifted = _add_latents(
+            ratings_matrix, student_alpha, student_beta, item_alpha, item_beta)
+
+        r = _compute_ratio_pt(a, d, ratio_kind=ratio_kind, ratio_kwargs=ratio_kwargs)
+        base = _likelihood_probs_from_r(r)
+
+        weights = pm.Dirichlet("grade_weights",
+                               a=np.full(len(GRADES), weight_concentration))
+        tilted = base * weights[None, :]
+        pm.Categorical("ratings_obs",
+                       p=tilted / tilted.sum(axis=1, keepdims=True),
+                       observed=obs_shifted)
+
+    return model
+
+
+def build_model_ordered(
+    ratings_matrix,
+    student_alpha=2, student_beta=2,
+    item_alpha=2, item_beta=2,
+    ratio_kind="sigmoid", ratio_kwargs=None,
+    gap_sigma=2.0,
+):
+    """Порядковая логистическая модель (graded response) с якорем на середине.
+
+    Семейство f_2..f_5 заменено целиком: берём `z = logit(ratio)` и пороги
+    `c1 < c2 < c3`, тогда `P(оценка ≤ k) = sigmoid(c_k − z)`. Пороги — ровно
+    тот механизм, которого не хватало фиксированному семейству: они
+    настраивают маргинальные доли оценок под данные, не трогая порядок.
+
+    Средний порог закреплён в нуле, свободны только два зазора. Это не
+    ограничение выразительности, а устранение ненаблюдаемости: прибавив
+    константу ко всем трём порогам и сдвинув `s` на неё же, получаем ровно то
+    же правдоподобие. Со всеми тремя свободными порогами постериор становится
+    плоским хребтом, и цепи расходятся (r_hat 1.53, ESS 8 на семестре 2).
+    Общий уровень строгости при этом всё равно поглощается латентными s и d.
+    """
+    with pm.Model() as model:
+        a, d, obs_shifted = _add_latents(
+            ratings_matrix, student_alpha, student_beta, item_alpha, item_beta)
+
+        r = _compute_ratio_pt(a, d, ratio_kind=ratio_kind, ratio_kwargs=ratio_kwargs)
+        z = pt.log(r) - pt.log1p(-r)
+
+        # initval здесь не задаём: pm.compute_log_likelihood не умеет работать
+        # с моделями, у которых нестандартная стартовая точка.
+        gaps = pm.HalfNormal("cutpoint_gaps", sigma=gap_sigma, shape=2)
+        cutpoints = pm.Deterministic(
+            "cutpoints", pt.stack([-gaps[0], pt.zeros(()), gaps[1]]))
+
+        pm.OrderedLogistic("ratings_obs", eta=z, cutpoints=cutpoints,
+                           observed=obs_shifted)
+
+    return model
+
+
+BUILDERS = {
+    "cond":    build_model_cond,
+    "nocond":  build_model_nocond,
+    "tilted":  build_model_tilted,
+    "ordered": build_model_ordered,
+}
+
+# Варианты, у которых правдоподобие полностью задано (s, d) без дополнительных
+# параметров, — только для них работает numpy-двойник grade_probs.
+CLOSED_FORM_VARIANTS = ("cond", "nocond")
 
 
 # ---------------------------------------------------------------------------

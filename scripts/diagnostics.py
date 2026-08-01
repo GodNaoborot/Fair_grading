@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import arviz as az
 
-from utils import RATIO_KINDS
+from utils import BUILDERS, RATIO_KINDS
 from _paths import TRACES, RESULTS
 
 # Порог r_hat, выше которого цепи считаются несошедшимися
@@ -65,7 +65,7 @@ def verdict(row):
 def main():
     rows = []
     for sem in (1, 2):
-        for model in ("cond", "nocond"):
+        for model in BUILDERS:
             for kind in RATIO_KINDS:
                 name = f"trace_sem{sem}_{model}_{kind}"
                 path = TRACES / f"{name}.nc"
